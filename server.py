@@ -5,9 +5,12 @@ import os
 import socket
 import atexit
 import json
+import time
+from utils import *
 from colorama import Fore, Back, Style, init as colorama_init
 from rich import print
 from rich.console import Console
+from pprint import pprint
 import rich
 import threading
 from hashlib import sha256
@@ -67,6 +70,9 @@ class Server(socket.socket):
 
         conn.send(data_to_send)
 
+        pprint(f"{Fore.CYAN}[ SENT ] - {data}")
+        log(data, "server", "sent")
+
     def receive_data(self, connection):
         data_received = False
         res = ""
@@ -92,6 +98,9 @@ class Server(socket.socket):
                 # console.log("-= FULL DATA RECEIVED =-")
                 # console.log(res[self.HEADER_SIZE:])
                 data_received = True
+
+        print(f"{Fore.MAGENTA}[ RECEIVED ] - {res[self.HEADER_SIZE:]}")
+        log(res[self.HEADER_SIZE:], "server", "received")
 
         return res[self.HEADER_SIZE:]
 
@@ -145,35 +154,48 @@ class Server(socket.socket):
         except Exception as e:
             return False
 
+    def client_disconnection(self, conn, username):
+        clients_list.remove(conn)
+
+        self.broadcast(f"{all_client_data[f'{conn}']['username']}{Fore.RED} has disconnected!")
+        all_client_data.pop(f"{conn}")
+
+        print(f"{username}{Fore.RED} has disconnected!")
+
+        conn.close()
+
     def start_server(self):
-        console.log(f"Binding server...")
+            console.log(f"Binding server...")
 
-        self.bind((self.SERVER_IP, self.SERVER_PORT))
+            self.bind((self.SERVER_IP, self.SERVER_PORT))
 
-        console.log(f"Server has been bound!")
+            console.log(f"Server has been bound!")
 
-        console.log(f"Listening for connections...   [Max: {self.MAX_CONNECTIONS}]")
+            console.log(f"Listening for connections...   [Max: {self.MAX_CONNECTIONS}]")
 
-        self.listen(self.MAX_CONNECTIONS)
+            self.listen(self.MAX_CONNECTIONS)
 
-        while True:
-            conn, addr = self.accept()
+            while True:
+                conn, addr = self.accept()
 
-            console.log(f"New connection from {addr[0]}:{addr[1]}")
+                console.log(f"New connection from {addr[0]}:{addr[1]}")
 
-            self.add_client(conn, addr)
+                self.add_client(conn, addr)
 
     def add_client(self, connection, address):
         console.log("Starting client thread...")
 
         all_client_data[f"{connection}"] = {}
-        clients_list.append(connection)
+        # clients_list.append(connection)
 
         client_thread = threading.Thread(target=self.handle_client, args=(connection, address))
         client_thread.start()
 
-    def broadcast(self, data: str):
+    def broadcast(self, data: str, except_conn=None):
         for client in clients_list:
+            if client == except_conn:
+                continue
+
             self.send_data(data, client)
 
     def hasher(self, text: str) -> str:
@@ -196,6 +218,12 @@ class Server(socket.socket):
     def handle_client(self, conn, addr):
         self.handle_starting_comms(conn)
 
+        if all_client_data[f"{conn}"]['login-type'] == "new":
+            self.send_data(f"{Fore.MAGENTA}SERVER{Style.RESET_ALL}{MESSAGE_COLON} Account registered!", conn)
+        
+        # all_client_data[f"{conn}"] = {}
+        clients_list.append(conn)
+
         connected = True
 
         username = all_client_data[f'{conn}']['username']
@@ -210,64 +238,77 @@ class Server(socket.socket):
                 console.log(f"[ EXCEPTION ] {e}")
                 connected = False
 
-        self.broadcast(f"{Fore.RED}{all_client_data[f'{conn}']['username']} has disconnected!")
+        self.client_disconnection(conn, username)
 
     def handle_starting_comms(self, conn):
         try:
-            received_data = self.receive_data(conn)
+            successful = False
 
-            console.log(received_data)
+            while not successful:
+                if successful:
+                    break
 
-            received_data = json.loads(received_data)
+                received_data = self.receive_data(conn)
 
-            login_method = received_data['method']
-            username = received_data['username']
-            password = received_data['password']
+                console.log(received_data)
 
-            # Checking if method to be used
-            if login_method == "guest":
-                all_client_data[f"{conn}"]['login-type'] = "guest"
-                all_client_data[f"{conn}"]['username'] = f"{Fore.LIGHTBLUE_EX}{username}{Style.RESET_ALL}"
+                received_data = json.loads(received_data)
 
-                starting_data_to_send = {
-                    "allowed": True
-                }
+                login_method = received_data['method']
+                username = received_data['username']
+                password = received_data['password']
 
-                self.broadcast(f'{username} joined the chat!')
-            elif login_method == "login":
-                verified = self.verify_account(username, password)
+                # Checking if method to be used
+                if login_method == "guest":
+                    all_client_data[f"{conn}"]['login-type'] = "guest"
+                    all_client_data[f"{conn}"]['username'] = f"{Fore.LIGHTBLUE_EX}{username}{Style.RESET_ALL}"
 
-                if verified:
                     starting_data_to_send = {
-                        "verified": verified
+                        "allowed": True
                     }
-                    all_client_data[f"{conn}"]['login-type'] = "proper"
-                    all_client_data[f"{conn}"]['username'] = f"{Fore.GREEN}{username}{Style.RESET_ALL}"
 
-                    self.broadcast(f'{username} joined the chat!')
-                else:
+                    successful = True
+
+                    self.broadcast(f'{username} joined the chat!', except_conn=conn)
+                elif login_method == "login":
+                    verified = self.verify_account(username, password)
+
+                    if verified:
+                        starting_data_to_send = {
+                            "verified": verified
+                        }
+                        all_client_data[f"{conn}"]['login-type'] = "proper"
+                        all_client_data[f"{conn}"]['username'] = f"{Fore.GREEN}{username}{Style.RESET_ALL}"
+
+                        successful = True
+
+                        self.broadcast(f'{username} joined the chat!', except_conn=conn)
+                    else:
+                        starting_data_to_send = {
+                            "verified": verified
+                        }
+                elif login_method == "register":
+                    self.add_account(username, password)
+                    all_client_data[f"{conn}"]['login-type'] = "new"
+                    all_client_data[f"{conn}"]['username'] = f"{Fore.YELLOW}{username}{Style.RESET_ALL}"
+
                     starting_data_to_send = {
-                        "verified": verified
+                        "created": True
                     }
-            elif login_method == "register":
-                self.add_account(username, password)
-                self.send_data(f"{Fore.MAGENTA}SERVER{Style.RESET_ALL}{MESSAGE_COLON} Account registered!", conn)
-                all_client_data[f"{conn}"]['login-type'] = "new"
-                all_client_data[f"{conn}"]['username'] = f"{Fore.YELLOW}{username}{Style.RESET_ALL}"
 
-                starting_data_to_send = {
-                    "created": True
-                }
+                    successful = True
 
-                self.broadcast(f'{username} joined the chat!')
+                    self.broadcast(f'{username} joined the chat!', except_conn=conn)
 
-            console.log(f"++ RECEIVED ++\n-- Method: {login_method}\n-- Name: {username}\n-- Password: {password}")
+                console.log(f"++ RECEIVED ++\n-- Method: {login_method}\n-- Name: {username}\n-- Password: {password}")
 
-            starting_data_json = json.dumps(starting_data_to_send)
+                starting_data_json = json.dumps(starting_data_to_send)
 
-            self.send_data(starting_data_json, conn)
+                time.sleep(0.5)
 
-            console.log(f"++ SENDING ++\n{starting_data_json}")
+                self.send_data(starting_data_json, conn)
+
+                console.log(f"++ SENDING ++\n{starting_data_json}")
         except Exception as e:
             console.log("Error: Unable to handle starting communications for client!")
             console.log(f"Exception: {e}")
@@ -307,6 +348,7 @@ def run():
     server.SERVER_PORT = 5555
 
     server.start_server()
+
 
 #########
 # OTHER #

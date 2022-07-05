@@ -4,6 +4,7 @@
 
 import socket
 import atexit
+import threading
 import time
 from colorama import Fore, Style, Back, init as colorama_init
 from rich.console import Console
@@ -11,6 +12,7 @@ import os
 import getpass
 from hashlib import sha256
 import json
+from utils import *
 
 ##################
 # COLORAMA STUFF #
@@ -100,25 +102,36 @@ class Client(socket.socket):
 
                 # Receiving
                 try:
-                    data_received = json.loads(self.recv_data())
+                    data_received = self.recv_data()
+                    info_print(data_received)
+
+                    data_received = json.loads(data_received)
                     print(f"RECEIVED: {data_received}")
                 except Exception as e:
                     print(f"Unable to convert received data to dict -> {e}")
-                    continue
-                else:
-                    if self.login_method == "login":
-                        self.verified = data_received['verified']
-                    elif self.login_method == "register":
-                        self.verified = data_received['created']
-                    elif self.login_method == "guest":
-                        self.verified = data_received['allowed']
+                    data_received = {"verified": "ERROR"}
+
+                print("Checking login data...")
+                if self.login_method == "login":
+                    self.verified = data_received['verified']
+
+                    if not self.verified:
+                        clear()
+                        print("Credentials are wrong!")
+                        self.username = input("Username: ")
+                        self.password = getpass.getpass("Password: ", stream=None)
+                elif self.login_method == "register":
+                    self.verified = data_received['created']
+                elif self.login_method == "guest":
+                    self.verified = data_received['allowed']
 
             print(f"{Fore.GREEN}[ SUCCESS ] Successfully verified client.")
         except socket.error as e:
             print(f"{Fore.RED}[ ERROR ] Unable to handle starting communications -> {e}")
             return False
-        else:
-            print(f"{Fore.GREEN}[ SUCCESS ] Starting communications were successful!")
+
+        print(f"{Fore.GREEN}[ SUCCESS ] Starting communications were successful!")
+        return True
 
     def hasher(self, text: str) -> str:
         """Hashes the given text to a SHA-256 hash
@@ -137,7 +150,7 @@ class Client(socket.socket):
 
         return hashed_text
 
-    def send_data(self, data: str) -> bool:
+    def send_data(self, data: str, echo=True) -> bool:
         """Sends data to server.
 
         Parameters:
@@ -161,12 +174,17 @@ class Client(socket.socket):
 
         try:
             self.send(data_to_send)
+
+            if echo:
+                print(f"{Fore.CYAN}[ SENT ] - {data}")
+            log(data, "client", "sent", echo=False)
+
             return True
         except socket.error as e:
             print(f"{Fore.RED}[ ERROR ] Unable to send data -> {e}")
             return False
 
-    def recv_data(self) -> str:
+    def recv_data(self, echo=True) -> str:
         """Receives data from server. Uses buffering and streaming!
 
         Returns:
@@ -197,6 +215,10 @@ class Client(socket.socket):
                 # console.log(res[self.HEADER_SIZE:])
                 data_received = True
 
+        if echo:
+            print(f"{Fore.MAGENTA}[ RECEIVED ] - {res[self.HEADER_SIZE:]}")
+        log(res[self.HEADER_SIZE:], "client", "received", echo=False)
+
         return res[self.HEADER_SIZE:]
 
 
@@ -220,7 +242,9 @@ client = Client(ENCODING_FORMAT)
 username = str()
 password = str()
 
-version = "0.0.1"
+version = "0.0.1a"
+
+stop_threads = False
 
 
 #############
@@ -238,9 +262,15 @@ def on_exit():
 
     console.log("Exiting...")
 
+    console.log("Closing threads...")
+    global stop_threads
+    stop_threads = True
+    console.log("Threads closed!")
+
     console.log("Closing socket...")
     client.close()
     console.log("Socket closed!")
+
 
 
 def start_screen():
@@ -300,6 +330,13 @@ def ascii_print(text=None):
         res = symbol * num_of_symbols + f"{text}" + symbol * num_of_symbols
 
     print(res)
+
+
+def handle_sending_msgs():
+    while not stop_threads:
+        user_msg = input(f"{Fore.BLUE}You{Fore.CYAN}:{Style.RESET_ALL} ")
+
+        client.send_data(user_msg, echo=False)
 
 
 def get_username_pass(login_method: str):
@@ -422,7 +459,36 @@ def run():
     client.set_login_method(option)
 
     # Starting communications
-    client.starting_communications()
+    starting_comms_successful = False
+
+    while not starting_comms_successful:
+        if client.starting_communications():
+            starting_comms_successful = True
+        else:
+            starting_comms_successful = False
+
+    clear()
+
+    print(f"{Fore.GREEN}Starting comms were successful!")
+
+    time.sleep(0.2)
+
+    print(f"{Fore.CYAN}+++++++++++++++++++++++++++++++++")
+    print(f"{Fore.YELLOW}Use /help for list of commands!")
+    print(f"{Fore.CYAN}+++++++++++++++++++++++++++++++++")
+
+    # Creating data sending thread
+    # Receiving is done in this function
+    sending_thread = threading.Thread(target=handle_sending_msgs)
+    sending_thread.start()
+
+    connected = True
+
+    while connected:
+        data_received = client.recv_data(echo=False)
+
+        if not client.username in data_received.split(":")[0]:
+            print("\n" + data_received)
 
     return
 
