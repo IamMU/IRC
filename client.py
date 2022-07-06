@@ -4,6 +4,7 @@
 
 import socket
 import atexit
+import sys
 import threading
 import time
 from colorama import Fore, Style, Back, init as colorama_init
@@ -13,6 +14,7 @@ import getpass
 from hashlib import sha256
 import json
 from utils import *
+from functools import wraps
 
 ##################
 # COLORAMA STUFF #
@@ -49,10 +51,10 @@ class Client(socket.socket):
         try:
             self.connect((self.SERVER_IP, self.SERVER_PORT))
         except socket.error as e:
-            print(f"{Fore.RED}[ ERROR ] Error encountered while connecting: {e}")
+            # style_table_print(f"{Fore.RED}[ ERROR ] Error encountered while connecting: {e}")
             return False
         else:
-            print(f"{Fore.GREEN}[ SUCCESS ] Successfully connected to {Fore.YELLOW}{self.SERVER_IP}{Fore.GREEN}:{Fore.YELLOW}{self.SERVER_PORT}{Fore.GREEN}!")
+            # print(f"{Fore.GREEN}[ SUCCESS ] Successfully connected to {Fore.YELLOW}{self.SERVER_IP}{Fore.GREEN}:{Fore.YELLOW}{self.SERVER_PORT}{Fore.GREEN}!")
             return True
 
     def set_login_method(self, option: str) -> bool:
@@ -78,7 +80,7 @@ class Client(socket.socket):
         Returns:
             bool: If communication was successful or not
         """
-        print(f"{Fore.YELLOW}[ INFO ] Sending starting info. Please wait...")
+        style_table_print(f"Sending starting info...", start=False)
 
         try:
             while not self.verified:
@@ -93,44 +95,48 @@ class Client(socket.socket):
 
                 message_json = json.dumps(message)
 
-                self.send_data(message_json)
+                self.send_data(message_json, echo=False)
 
-                print(f"{Fore.CYAN}-+= SENDING =+-\n--++==>> {message_json}")
+                # print(f"{Fore.CYAN}-+= SENDING =+-\n--++==>> {message_json}")
 
                 # Waiting a little
                 time.sleep(0.2)
 
                 # Receiving
                 try:
-                    data_received = self.recv_data()
-                    info_print(data_received)
+                    data_received = self.recv_data(echo=False)
+                    # info_print(data_received)
 
                     data_received = json.loads(data_received)
-                    print(f"RECEIVED: {data_received}")
+                    # print(f"RECEIVED: {data_received}")
                 except Exception as e:
-                    print(f"Unable to convert received data to dict -> {e}")
+                    # print(f"Unable to convert received data to dict -> {e}")
+                    style_table_print(f"ERROR", start=False)
                     data_received = {"verified": "ERROR"}
 
-                print("Checking login data...")
+                style_table_print("Authenticating...", start=False)
                 if self.login_method == "login":
                     self.verified = data_received['verified']
 
                     if not self.verified:
                         clear()
-                        print("Credentials are wrong!")
-                        self.username = input("Username: ")
-                        self.password = getpass.getpass("Password: ", stream=None)
+                        style_table_print(f"Credentials are wrong!", start=False)
+                        self.username = input(f"{Fore.CYAN}| {Fore.YELLOW}Username:{Fore.MAGENTA} ")
+                        self.password = getpass.getpass(f"{Fore.CYAN}| {Fore.YELLOW}Password: ", stream=None)
                 elif self.login_method == "register":
                     self.verified = data_received['created']
                 elif self.login_method == "guest":
                     self.verified = data_received['allowed']
 
-            print(f"{Fore.GREEN}[ SUCCESS ] Successfully verified client.")
+            style_table_print(f"Your client has been verified!", start=False)
         except socket.error as e:
-            print(f"{Fore.RED}[ ERROR ] Unable to handle starting communications -> {e}")
+            style_table_print(f"AN ERROR OCCURRED!", start=False)
+            # print(f"{Fore.RED}[ ERROR ] Unable to handle starting communications -> {e}")
             return False
 
-        print(f"{Fore.GREEN}[ SUCCESS ] Starting communications were successful!")
+        # time.sleep(10)
+
+        # print(f"{Fore.GREEN}[ SUCCESS ] Starting communications were successful!")
         return True
 
     def hasher(self, text: str) -> str:
@@ -239,17 +245,19 @@ console = Console()
 
 client = Client(ENCODING_FORMAT)
 
+client_auth_option = ""
+
 username = str()
 password = str()
 
-version = "0.0.1a"
+version = "0.1b"
 
 stop_threads = False
 
 
-#############
-# FUNCTIONS #
-#############
+#####################
+# UTILITY FUNCTIONS #
+#####################
 def clear():
     try:
         os.system("clear")
@@ -258,7 +266,7 @@ def clear():
 
 
 def on_exit():
-    clear()
+    # clear()
 
     console.log("Exiting...")
 
@@ -271,15 +279,8 @@ def on_exit():
     client.close()
     console.log("Socket closed!")
 
+    sys.exit()
 
-
-def start_screen():
-    loading_text("Loading", 0.5)
-    
-    ascii_print(f"Welcome to IRC Client v.{version}")
-
-    input("Press enter to continue...")
-    
 
 def loading_text(text, time_to_sleep: float):
     clear()
@@ -295,7 +296,7 @@ def loading_text(text, time_to_sleep: float):
         clear()
 
         elapsed_time = time.time() - start_time
-        
+
         if elapsed_time >= time_to_sleep:
             break
 
@@ -332,77 +333,134 @@ def ascii_print(text=None):
     print(res)
 
 
+def style_table_print(text, max_len=20, start=True, end=True):
+    max_len = len("-----------------------------------")
+
+    len_of_text = len(text)
+    len_of_spaces = int((max_len - len_of_text + 1))
+
+    final_text = f"{Fore.CYAN}|{Fore.YELLOW} {text} {' ' * (len_of_spaces - 2)}{Fore.CYAN}|"
+
+    if len(final_text) > 52:
+        final_text = final_text[:46]
+        final_text += f"{Fore.CYAN}|"
+
+    sep = f"{Fore.CYAN}|{'-' * (int(max_len))}|"
+
+    if start:
+        print(sep)
+    print(final_text)
+    if end:
+        print(sep)
+
+
+def ask_exit_script():
+    successful = False
+
+    while not successful:
+        user_in = input(f"{Fore.YELLOW}Are you sure? [Y/N]\n> {Fore.MAGENTA}")
+
+        if user_in.lower() == "y":
+            clear()
+            successful = True
+            on_exit()
+        elif user_in.lower() == "n":
+            print(f"{Fore.GREEN}:D")
+            time.sleep(0.4)
+            clear()
+            successful = True
+        else:
+            print(f"{Fore.RED}Please answer correctly!")
+            time.sleep(0.6)
+
+#############
+# FUNCTIONS #
+#############
 def handle_sending_msgs():
     while not stop_threads:
-        user_msg = input(f"{Fore.BLUE}You{Fore.CYAN}:{Style.RESET_ALL} ")
+        user_msg = input(f"{Fore.CYAN}| {Fore.YELLOW}You{Fore.CYAN}:{Fore.MAGENTA} ")
 
         client.send_data(user_msg, echo=False)
 
 
 def get_username_pass(login_method: str):
+    # GLOBAL VARIABLES
     global username
     global password
 
-    ascii_print("CREDENTIALS")
-    if login_method.lower() == "login" or login_method.lower() == "1":
-        username = input("Username: ")
-        password = getpass.getpass("Password: ", stream=False)
-    elif login_method.lower() == "register" or login_method.lower() == "2":
-        while True:
-            username = input("Username: ")
-            password = getpass.getpass("New Password: ", stream=False)
-            confirm = getpass.getpass("Confirm Password: ", stream=False)
+    proceed = False
 
-            if password == confirm:
-                break
-            else:
-                print("Please retype your credentials. Unable to register account!")
-                time.sleep(1)
-                clear()
-    elif login_method.lower() == "guest" or login_method.lower() == "3":
-        username = input("Username: ")
-        password = "guest"
+    while not proceed:
+        try:
+            style_table_print("CREDENTIALS")
 
-    time.sleep(0.1)
+            if login_method.lower() == "login" or login_method.lower() == "1":
+                username = input(f"{Fore.CYAN}| {Fore.YELLOW}Username: {Fore.MAGENTA}")
+                password = getpass.getpass(f"{Fore.CYAN}| {Fore.YELLOW}Password: ", stream=False)
+                proceed = True
+            elif login_method.lower() == "register" or login_method.lower() == "2":
+                username = input(f"{Fore.CYAN}| {Fore.YELLOW}Username:{Fore.MAGENTA} ")
+                password = getpass.getpass(f"{Fore.CYAN}| {Fore.YELLOW}New Password: ", stream=False)
+                confirm = getpass.getpass(f"{Fore.CYAN}| {Fore.YELLOW}Confirm Password: ", stream=False)
+
+                if password == confirm:
+                    proceed = True
+                else:
+                    print(f"{Fore.CYAN}| {Fore.RED}Please retype your credentials.\n{Fore.CYAN}|{Fore.RED} Unable to register account!")
+                    time.sleep(1)
+                    clear()
+            elif login_method.lower() == "guest" or login_method.lower() == "3":
+                username = input(f"{Fore.CYAN}| {Fore.YELLOW}Username: {Fore.MAGENTA}")
+                password = "guest"
+                proceed = True
+        except KeyboardInterrupt as e:
+            ask_exit_script()
 
     client.username = username
     client.password = password
 
     clear()
-
-    loading_text("Loading", 0.5)
-
+    print(Style.RESET_ALL)
     clear()
 
 
-def register_or_login():
+def register_or_login_menu():
     clear()
 
-    while True:
-        ascii_print("IRC")
-        ascii_print(f"1. LOGIN")
-        ascii_print(f"2. REGISTER")
-        ascii_print(f"3. GUEST")
-        ascii_print()
+    proceed = False
 
-        option = input(f"ENTER OPTION ====> ").lower()
+    while not proceed:
+        style_table_print("AUTHENTICATION OPTIONS")
+        style_table_print(f"1. ACCOUNT", start=False)
+        style_table_print(f"2. REGISTER", start=False)
+        style_table_print(f"3. GUEST", start=False)
+        # style_table_print(f"4. RETURN TO MAIN MENU", start=False)
 
-        if option == "1" or option == "login":
-            option = "login"
-            break
-        elif option == "2" or option == "register":
-            option = "register"
-            break
-        elif option == "3" or option == "guest":
-            option = "guest"
-            break
-        else:
-            clear()
-            print(f"[ UNEXPECTED INPUT ] {option} is an invalid option!")
+        try:
+            option = input(f"{Fore.CYAN}| {Fore.YELLOW}Enter option:{Fore.MAGENTA} ").lower()
+
+            if option == "1" or option.startswith("a"):
+                option = "login"
+                proceed = True
+            elif option == "2" or option.startswith("reg"):
+                option = "register"
+                proceed = True
+            elif option == "3" or option.startswith("g"):
+                option = "guest"
+                proceed = True
+            # elif option == "4" or option.startswith("ret"):
+            #     clear()
+            #     main_menu()
+            else:
+                print(f"{Fore.CYAN}| {Fore.RED}'{option}' IS AN INVALID OPTION!")
+                time.sleep(0.6)
+                clear()
+        except KeyboardInterrupt as e:
+            ask_exit_script()
+
+    print(f"{Style.RESET_ALL}")
 
     clear()
-
-    loading_text("Redirecting", 0.5)
 
     get_username_pass(option)
 
@@ -415,67 +473,112 @@ def attempt_connection():
     is_connected = False
 
     while not is_connected:
-        ascii_print("ENTER SERVER INFO")
-        ip = input("Enter IP: ")
-        port = int(input("Enter Port: "))
+        try:
+            style_table_print("SERVER INFORMATION")
+            ip = input(f"{Fore.CYAN}| {Fore.YELLOW}Enter IP: {Fore.MAGENTA}")
 
-        client.SERVER_IP = ip
-        client.SERVER_PORT = port
+            try:
+                port = int(input(f"{Fore.CYAN}| {Fore.YELLOW}Enter Port: {Fore.MAGENTA}"))
+            except ValueError as e:
+                print(f"{Fore.CYAN}| {Fore.RED}Please type a number!")
+                time.sleep(0.6)
+                clear()
+                continue
 
-        is_connected = client.connect_to_server()
+            client.SERVER_IP = ip
+            client.SERVER_PORT = port
 
-        if is_connected:
-            break
-        else:
-            print("Unable to connect to server. Make sure the address is correct!")
-            time.sleep(0.5)
-            clear()
+            is_connected = client.connect_to_server()
+
+            if is_connected:
+                break
+            else:
+                style_table_print("Unable to connect to server!", start=True)
+                style_table_print("Make sure the address is correct!", start=False)
+                time.sleep(1.5)
+                clear()
+        except KeyboardInterrupt as e:
+            ask_exit_script()
 
     clear()
 
-    print("Connection successful!")
+    style_table_print("Connection successful!")
 
 
-def start_menu():
-    start_screen()
+def show_credits():
+    clear()
 
-    option = register_or_login()
+    style_table_print("This project was made by MU.")
+    input(f"{Fore.CYAN}| {Fore.YELLOW}Press enter to return")
 
-    return option
+    clear()
+
+
+def main_menu():
+    proceed = False
+
+    # Introductory screen
+
+    while not proceed:
+        style_table_print(f"IRC Client v.{version}")
+        # style_table_print("", start=False)
+        style_table_print(f"OPTIONS", start=False)
+        style_table_print(f"1. GO TO MAIN MENU", start=False)
+        style_table_print(f"2. CREDITS", start=False)
+        style_table_print(f"3. EXIT", start=False)
+
+        try:
+            option = input(f"{Fore.CYAN}| {Fore.YELLOW}Enter Option: {Fore.MAGENTA}").lower()
+
+            if option == "1" or option.startswith("g"):
+                proceed = True
+            elif option == "2" or option.startswith("c"):
+                show_credits()
+            elif option.startswith("e") or option == "3":
+                ask_exit_script()
+            else:
+                print(f"{Fore.CYAN}| {Fore.RED}'{option}' IS AN INVALID OPTION!")
+                time.sleep(1)
+                clear()
+        except KeyboardInterrupt as e:
+            ask_exit_script()
 
 
 def run():
     # Global variables
 
     # Displaying main menu
-    option = start_menu()
+    main_menu()
+
+    # Asking for log in method
+    login_option = register_or_login_menu()
 
     # Attempt connection
     attempt_connection()
 
     # Setting login method
-    print(f"{Fore.YELLOW}Setting login method to {option}")
-
-    client.set_login_method(option)
+    client.set_login_method(login_option)
+    # print(f"{Fore.YELLOW}Setting login method to {login_option}")
 
     # Starting communications
-    starting_comms_successful = False
+    style_table_print("STARTING COMMUNICATIONS")
+    style_table_print("Initializing...", start=False, end=False)
 
-    while not starting_comms_successful:
+    while True:
         if client.starting_communications():
-            starting_comms_successful = True
-        else:
-            starting_comms_successful = False
+            style_table_print(f"{Fore.GREEN}Successfully finished!", start=False)
+
+            try:
+                time.sleep(0.6)
+            except KeyboardInterrupt as e:
+                ask_exit_script()
+
+            break
 
     clear()
 
-    print(f"{Fore.GREEN}Starting comms were successful!")
-
-    time.sleep(0.2)
-
-    print(f"{Fore.CYAN}+++++++++++++++++++++++++++++++++")
-    print(f"{Fore.YELLOW}Use /help for list of commands!")
-    print(f"{Fore.CYAN}+++++++++++++++++++++++++++++++++")
+    style_table_print("WELCOME TO THE SERVER!")
+    style_table_print(f"Use /help for list of commands!", start=False)
 
     # Creating data sending thread
     # Receiving is done in this function
@@ -491,51 +594,6 @@ def run():
             print("\n" + data_received)
 
     return
-
-    # Connection
-
-    time.sleep(1)
-
-    clear()
-
-    verified = False
-
-    while not verified:
-        print("Use \n   guest => username\n   password => password\nto log in as a guest user!")
-
-        username = input("Username: ")
-        password = getpass.getpass("Password: ", stream=None)
-
-        if username.lower() == "guest" and password.lower() == "password":
-            client.is_guest = True
-            os.system('clear')
-            print("Logging in as guest...")
-            print("Loading...")
-            break
-
-        verified = client.verified
-
-        if verified:
-            clear()
-            print("You have been verified!")
-            print("Loading...")
-            break
-        else:
-            print("Credentials incorrect!")
-            time.sleep(1)
-            clear()
-
-    time.sleep(1)
-    clear()
-    # # Creating client socket
-    # console.log("Creating client socket...")
-    #
-    # client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    #
-    # # Connecting to server
-    # console.log(f"Connecting to server at {SERVER_IP}:{SERVER_PORT}")
-    #
-    # client.connect((SERVER_IP, SERVER_PORT))
 
 
 #########
