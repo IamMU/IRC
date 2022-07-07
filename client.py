@@ -196,6 +196,7 @@ class Client(socket.socket):
         Returns:
             str: Received data
         """
+
         data_received = False
         res = ""
         header_received = False
@@ -268,16 +269,22 @@ def clear():
 def on_exit():
     # clear()
 
-    console.log("Exiting...")
+    style_table_print("Exiting...")
 
-    console.log("Closing threads...")
+    style_table_print("Closing threads...", start=False)
+
     global stop_threads
     stop_threads = True
-    console.log("Threads closed!")
 
-    console.log("Closing socket...")
+    # style_table_print("Threads closed!", start=False)
+
+    style_table_print("Closing socket...", start=False)
+
     client.close()
-    console.log("Socket closed!")
+
+    # style_table_print("Socket closed!", start=False)
+
+    style_table_print("GOOD BYE <3", start=False)
 
     sys.exit()
 
@@ -414,6 +421,7 @@ def get_username_pass(login_method: str):
                 password = "guest"
                 proceed = True
         except KeyboardInterrupt as e:
+            print("\n", end="\r")
             ask_exit_script()
 
     client.username = username
@@ -434,7 +442,7 @@ def register_or_login_menu():
         style_table_print(f"1. ACCOUNT", start=False)
         style_table_print(f"2. REGISTER", start=False)
         style_table_print(f"3. GUEST", start=False)
-        # style_table_print(f"4. RETURN TO MAIN MENU", start=False)
+        style_table_print(f"4. EXIT", start=False)
 
         try:
             option = input(f"{Fore.CYAN}| {Fore.YELLOW}Enter option:{Fore.MAGENTA} ").lower()
@@ -448,14 +456,14 @@ def register_or_login_menu():
             elif option == "3" or option.startswith("g"):
                 option = "guest"
                 proceed = True
-            # elif option == "4" or option.startswith("ret"):
-            #     clear()
-            #     main_menu()
+            elif option == "4" or option.startswith("e"):
+                ask_exit_script()
             else:
                 print(f"{Fore.CYAN}| {Fore.RED}'{option}' IS AN INVALID OPTION!")
                 time.sleep(0.6)
                 clear()
         except KeyboardInterrupt as e:
+            print("\n", end="\r")
             ask_exit_script()
 
     print(f"{Style.RESET_ALL}")
@@ -498,6 +506,7 @@ def attempt_connection():
                 time.sleep(1.5)
                 clear()
         except KeyboardInterrupt as e:
+            print("\n", end="\r")
             ask_exit_script()
 
     clear()
@@ -541,6 +550,7 @@ def main_menu():
                 time.sleep(1)
                 clear()
         except KeyboardInterrupt as e:
+            print("\n", end="\r")
             ask_exit_script()
 
 
@@ -591,7 +601,7 @@ def run():
         data_received = client.recv_data(echo=False)
 
         if not client.username in data_received.split(":")[0]:
-            print("\n" + data_received)
+            print(f"{Fore.CYAN}| {Style.RESET_ALL}{data_received}")
 
     return
 
