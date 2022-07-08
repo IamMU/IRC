@@ -19,7 +19,7 @@ from functools import wraps
 ##################
 # COLORAMA STUFF #
 ##################
-colorama_init(autoreset=True)
+colorama_init()
 
 
 ##########################################
@@ -255,6 +255,9 @@ version = "0.1b"
 
 stop_threads = False
 
+messages_buffer = []
+stop_input_buffer_adding = False
+
 
 #####################
 # UTILITY FUNCTIONS #
@@ -330,7 +333,7 @@ def ascii_print(text=None):
 
     text_len = len(text)
 
-    num_of_symbols = max_amount_of_symbols - int(text_len/2)
+    num_of_symbols = max_amount_of_symbols - int(text_len / 2)
 
     if text_len < num_of_symbols:
         res = symbol * num_of_symbols + f" {text} " + symbol * num_of_symbols
@@ -380,14 +383,63 @@ def ask_exit_script():
             print(f"{Fore.RED}Please answer correctly!")
             time.sleep(0.6)
 
+
 #############
 # FUNCTIONS #
 #############
 def handle_sending_msgs():
+    # Global variables
+    global stop_input_buffer_adding
+
+    # Other
     while not stop_threads:
-        user_msg = input(f"{Fore.CYAN}| {Fore.YELLOW}You{Fore.CYAN}:{Fore.MAGENTA} ")
+        # 1
+        # messages_buffer.append("INPUT")
+        # stop_input_buffer_adding = False
+        # input_buffer_thread = threading.Thread(target=add_input_to_buffer)
+        # input_buffer_thread.start()
+        #
+        # user_msg = input('')
+        #
+        # stop_input_buffer_adding = True
+        #
+        # client.send_data(user_msg, echo=False)
+
+        # 2
+        messages_buffer.append("INPUT")
+        stop_input_buffer_adding = False
+        input_buffer_thread = threading.Thread(target=add_input_to_buffer)
+        input_buffer_thread.start()
+
+        user_msg = input(f"{Fore.CYAN}| {Fore.BLUE}You{Fore.CYAN}:{Fore.MAGENTA} ")
+
+        stop_input_buffer_adding = True
 
         client.send_data(user_msg, echo=False)
+
+
+def add_input_to_buffer():
+    global messages_buffer
+
+    if len(messages_buffer) >= 10:
+        messages_buffer = ["INPUT"]
+
+    while not stop_input_buffer_adding:
+        messages_buffer[-1] = "INPUT"
+
+
+def handle_receiving_msgs():
+    connected = True
+
+    while not stop_threads and connected:
+        data_received = client.recv_data(echo=False)
+
+        if not client.username in data_received.split(":")[0]:
+            if messages_buffer[-1] == "INPUT":
+                print(f"\n{Fore.CYAN}| {Style.RESET_ALL}{data_received}\n{Fore.CYAN}| {Fore.CYAN}You: {Fore.MAGENTA}", end='')
+            else:
+                print(f"{Fore.CYAN}| {Style.RESET_ALL}{data_received}{Fore.MAGENTA}")
+                messages_buffer.append(data_received)
 
 
 def get_username_pass(login_method: str):
@@ -413,7 +465,8 @@ def get_username_pass(login_method: str):
                 if password == confirm:
                     proceed = True
                 else:
-                    print(f"{Fore.CYAN}| {Fore.RED}Please retype your credentials.\n{Fore.CYAN}|{Fore.RED} Unable to register account!")
+                    print(
+                        f"{Fore.CYAN}| {Fore.RED}Please retype your credentials.\n{Fore.CYAN}|{Fore.RED} Unable to register account!")
                     time.sleep(1)
                     clear()
             elif login_method.lower() == "guest" or login_method.lower() == "3":
@@ -576,7 +629,7 @@ def run():
 
     while True:
         if client.starting_communications():
-            style_table_print(f"{Fore.GREEN}Successfully finished!", start=False)
+            style_table_print(f"Successfully finished!", start=False)
 
             try:
                 time.sleep(0.6)
@@ -595,13 +648,8 @@ def run():
     sending_thread = threading.Thread(target=handle_sending_msgs)
     sending_thread.start()
 
-    connected = True
-
-    while connected:
-        data_received = client.recv_data(echo=False)
-
-        if not client.username in data_received.split(":")[0]:
-            print(f"{Fore.CYAN}| {Style.RESET_ALL}{data_received}")
+    receiving_thread = threading.Thread(target=handle_receiving_msgs)
+    receiving_thread.start()
 
     return
 
